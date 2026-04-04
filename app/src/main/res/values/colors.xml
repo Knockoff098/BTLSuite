@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ice_blue">#FF1A237E</color>
+    <color name="snow_white">#FFFAFAFA</color>
+    <color name="frost_gray">#FF37474F</color>
+    <color name="fire_orange">#FFFF6F00</color>
+    <color name="wood_brown">#FF5D4037</color>
+    <color name="steel_blue">#FF455A64</color>
+</resources>
