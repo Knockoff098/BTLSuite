@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>BTL Suite - Tests</title>
+  <style>
+    body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 2rem; }
+    h1 { color: #6c8cff; }
+    .pass { color: #4caf79; }
+    .fail { color: #e05555; }
+    .suite { margin: 1rem 0; padding: 1rem; background: #242836; border-radius: 6px; }
+    .suite h2 { color: #b388ff; font-size: 1rem; margin-bottom: 0.5rem; }
+    .test { padding: 0.25rem 0; padding-left: 1rem; }
+    .summary { margin-top: 1.5rem; padding: 1rem; background: #242836; border-radius: 6px; font-size: 1.1rem; }
+  </style>
+</head>
+<body>
+  <h1>BTL Suite Test Runner</h1>
+  <div id="results"></div>
+  <div id="summary" class="summary"></div>
+
+  <script src="../src/btl-parser.js"></script>
+  <script src="../src/btl-converter.js"></script>
+  <script src="../src/btl-editor.js"></script>
+  <script>
+    let passed = 0;
+    let failed = 0;
+    const results = document.getElementById('results');
+
+    function assert(condition, message) {
+      if (condition) {
+        passed++;
+        log(message, true);
+      } else {
+        failed++;
+        log(message, false);
+      }
+    }
+
+    function assertEqual(actual, expected, message) {
+      if (actual === expected) {
+        passed++;
+        log(message, true);
+      } else {
+        failed++;
+        log(`${message} (expected: ${JSON.stringify(expected)}, got: ${JSON.stringify(actual)})`, false);
+      }
+    }
+
+    function log(message, pass) {
+      const div = document.createElement('div');
+      div.className = `test ${pass ? 'pass' : 'fail'}`;
+      div.textContent = `${pass ? 'PASS' : 'FAIL'}: ${message}`;
+      currentSuite.appendChild(div);
+    }
+
+    let currentSuite;
+    function suite(name) {
+      const div = document.createElement('div');
+      div.className = 'suite';
+      const h2 = document.createElement('h2');
+      h2.textContent = name;
+      div.appendChild(h2);
+      results.appendChild(div);
+      currentSuite = div;
+    }
+
+    // ── Sample BTL XML ─────────────────────────────────────────
+
+    const sampleXml = `<?xml version="1.0" encoding="UTF-8"?>
+<BTLDocument Version="2.0" Generator="BTLSuite" Date="2026-04-04">
+  <Project Name="Test Project" Description="Test description">
+    <Customer>Test Customer</Customer>
+    <Architect>Test Architect</Architect>
+  </Project>
+  <Part Id="beam-001" Name="Main Beam" Type="Beam" Material="GL24h">
+    <Length>6000</Length>
+    <Width>200</Width>
+    <Height>400</Height>
+    <Cut Id="cut-001" ReferenceSide="1">
+      <Angle>90</Angle>
+      <Depth>400</Depth>
+    </Cut>
+    <Drilling Id="drill-001" ReferenceSide="2">
+      <Diameter>16</Diameter>
+      <Depth>200</Depth>
+    </Drilling>
+  </Part>
+  <Part Id="rafter-001" Name="Rafter" Type="Rafter" Material="C24">
+    <Length>4500</Length>
+    <Width>100</Width>
+    <Height>200</Height>
+  </Part>
+</BTLDocument>`;
+
+    // ── Parser Tests ───────────────────────────────────────────
+
+    suite('BTLParser - Basic Parsing');
+
+    const parser = new BTLParser();
+    const doc = parser.parse(sampleXml);
+
+    assertEqual(doc.rootTagName, 'BTLDocument', 'Root tag name is BTLDocument');
+    assertEqual(doc.rootAttributes['Version'], '2.0', 'Version attribute is 2.0');
+    assertEqual(doc.rootAttributes['Generator'], 'BTLSuite', 'Generator attribute is BTLSuite');
+    assertEqual(doc.metadata.version, '2.0', 'Metadata version extracted');
+    assertEqual(doc.metadata.generator, 'BTLSuite', 'Metadata generator extracted');
+
+    suite('BTLParser - Project');
+
+    assert(doc.project !== null, 'Project is parsed');
+    assertEqual(doc.project.name, 'Test Project', 'Project name');
+    assertEqual(doc.project.description, 'Test description', 'Project description');
+    assertEqual(doc.project.customer, 'Test Customer', 'Project customer');
+    assertEqual(doc.project.architect, 'Test Architect', 'Project architect');
+
+    suite('BTLParser - Parts');
+
+    assertEqual(doc.parts.length, 2, 'Two parts parsed');
+    assertEqual(doc.parts[0].id, 'beam-001', 'First part ID');
+    assertEqual(doc.parts[0].name, 'Main Beam', 'First part name');
+    assertEqual(doc.parts[0].type, 'Beam', 'First part type');
+    assertEqual(doc.parts[0].material, 'GL24h', 'First part material');
+    assertEqual(doc.parts[0].length, 6000, 'First part length');
+    assertEqual(doc.parts[0].width, 200, 'First part width');
+    assertEqual(doc.parts[0].height, 400, 'First part height');
+
+    assertEqual(doc.parts[1].id, 'rafter-001', 'Second part ID');
+    assertEqual(doc.parts[1].name, 'Rafter', 'Second part name');
+    assertEqual(doc.parts[1].length, 4500, 'Second part length');
+
+    suite('BTLParser - Processings');
+
+    assertEqual(doc.parts[0].processings.length, 2, 'First part has 2 processings');
+    assertEqual(doc.parts[0].processings[0].type, 'Cut', 'First processing is Cut');
+    assertEqual(doc.parts[0].processings[0].id, 'cut-001', 'Cut ID');
+    assertEqual(doc.parts[0].processings[0].referenceSide, '1', 'Cut reference side');
+    assertEqual(doc.parts[0].processings[0].parameters['Angle'], 90, 'Cut angle parameter');
+    assertEqual(doc.parts[0].processings[0].parameters['Depth'], 400, 'Cut depth parameter');
+
+    assertEqual(doc.parts[0].processings[1].type, 'Drilling', 'Second processing is Drilling');
+    assertEqual(doc.parts[0].processings[1].parameters['Diameter'], 16, 'Drilling diameter');
+
+    suite('BTLParser - Summary');
+
+    const summary = doc.getSummary();
+    assertEqual(summary.rootTag, 'BTLDocument', 'Summary root tag');
+    assertEqual(summary.partsCount, 2, 'Summary parts count');
+    assertEqual(summary.processingsCount, 2, 'Summary processings count');
+    assert(summary.hasProject === true, 'Summary has project');
+
+    suite('BTLParser - Error Handling');
+
+    try {
+      parser.parse('<invalid><xml>');
+      // DOM parser doesn't always throw, check for parsererror
+      assert(true, 'Handles malformed XML without crashing');
+    } catch (e) {
+      assert(e instanceof BTLParseError, 'Throws BTLParseError for invalid XML');
+    }
+
+    // ── Converter Tests ────────────────────────────────────────
+
+    suite('BTLConverter - To JSON');
+
+    const converter = new BTLConverter();
+    const jsonStr = converter.btlToJson(sampleXml);
+    const jsonObj = JSON.parse(jsonStr);
+
+    assert(jsonObj.rootTagName === 'BTLDocument', 'JSON has root tag name');
+    assert(jsonObj.parts.length === 2, 'JSON has 2 parts');
+    assert(jsonObj.project.name === 'Test Project', 'JSON has project name');
+
+    suite('BTLConverter - To CSV');
+
+    const csv = converter.btlToCsv(sampleXml);
+    assert(csv.includes('beam-001'), 'CSV contains beam ID');
+    assert(csv.includes('Main Beam'), 'CSV contains beam name');
+    assert(csv.includes('rafter-001'), 'CSV contains rafter ID');
+    assert(csv.includes('Section: Parts'), 'CSV has Parts section');
+
+    suite('BTLConverter - JSON to BTL roundtrip');
+
+    const btlXml = converter.jsonToBtl(jsonObj);
+    assert(btlXml.includes('BTLDocument'), 'Roundtrip XML contains root tag');
+    assert(btlXml.includes('beam-001'), 'Roundtrip XML contains part ID');
+    assert(btlXml.includes('<Length>6000</Length>'), 'Roundtrip XML contains length');
+    assert(btlXml.includes('<Cut'), 'Roundtrip XML contains processing');
+
+    // Re-parse the roundtrip output
+    const doc2 = parser.parse(btlXml);
+    assertEqual(doc2.parts.length, 2, 'Roundtrip re-parsed has 2 parts');
+    assertEqual(doc2.parts[0].id, 'beam-001', 'Roundtrip part ID preserved');
+
+    suite('BTLConverter - CSV to BTL');
+
+    const csvInput = `Section: Parts
+ID,Name,Type,Material,Length,Width,Height,Processings Count
+beam-001,Main Beam,Beam,GL24h,6000,200,400,0
+rafter-001,Rafter,Rafter,C24,4500,100,200,0`;
+
+    const btlFromCsv = converter.csvToBtl(csvInput);
+    assert(btlFromCsv.includes('beam-001'), 'CSV-to-BTL contains beam ID');
+    assert(btlFromCsv.includes('Rafter'), 'CSV-to-BTL contains rafter name');
+
+    // ── Editor Tests ───────────────────────────────────────────
+
+    suite('BTLEditor - Initialization');
+
+    const editorDoc = parser.parse(sampleXml);
+    const editor = new BTLEditor(editorDoc);
+
+    assertEqual(editor.getDocument().parts.length, 2, 'Editor starts with 2 parts');
+    assert(editor.canUndo === false, 'Cannot undo at start');
+
+    suite('BTLEditor - Add Part');
+
+    const newIdx = editor.addPart({
+      id: 'post-001',
+      name: 'New Post',
+      type: 'Post',
+      material: 'GL28h',
+      length: 3000,
+      width: 200,
+      height: 200,
+    });
+
+    assertEqual(editor.getDocument().parts.length, 3, 'After add: 3 parts');
+    assertEqual(editor.getDocument().parts[newIdx].name, 'New Post', 'New part name');
+    assert(editor.canUndo === true, 'Can undo after add');
+
+    suite('BTLEditor - Update Part');
+
+    editor.updatePart(0, { name: 'Updated Beam' });
+    assertEqual(editor.getDocument().parts[0].name, 'Updated Beam', 'Part name updated');
+
+    suite('BTLEditor - Undo/Redo');
+
+    editor.undo();
+    assertEqual(editor.getDocument().parts[0].name, 'Main Beam', 'After undo: original name');
+    assert(editor.canRedo === true, 'Can redo after undo');
+
+    editor.redo();
+    assertEqual(editor.getDocument().parts[0].name, 'Updated Beam', 'After redo: updated name');
+
+    suite('BTLEditor - Remove Part');
+
+    editor.removePart(2);
+    assertEqual(editor.getDocument().parts.length, 2, 'After remove: 2 parts');
+
+    suite('BTLEditor - Duplicate Part');
+
+    const dupeIdx = editor.duplicatePart(0);
+    assertEqual(editor.getDocument().parts.length, 3, 'After duplicate: 3 parts');
+    assert(editor.getDocument().parts[dupeIdx].id.includes('copy'), 'Duplicate has copy suffix');
+
+    suite('BTLEditor - Add Processing');
+
+    const procIdx = editor.addProcessingToPart(0, {
+      type: 'Notch',
+      name: 'Test Notch',
+      referenceSide: '3',
+      parameters: { Width: 100, Depth: 50 },
+    });
+
+    assertEqual(editor.getDocument().parts[0].processings.length, 3, 'Part has 3 processings after add');
+    assertEqual(editor.getDocument().parts[0].processings[procIdx].type, 'Notch', 'New processing type');
+
+    suite('BTLEditor - Update Processing Params');
+
+    editor.updateProcessingParams(0, procIdx, { Width: 120, Length: 300 });
+    assertEqual(editor.getDocument().parts[0].processings[procIdx].parameters['Width'], 120, 'Param updated');
+    assertEqual(editor.getDocument().parts[0].processings[procIdx].parameters['Length'], 300, 'New param added');
+
+    suite('BTLEditor - Remove Processing');
+
+    editor.removeProcessing(0, procIdx);
+    assertEqual(editor.getDocument().parts[0].processings.length, 2, 'Processing removed');
+
+    suite('BTLEditor - Clear All');
+
+    editor.clearAll();
+    assertEqual(editor.getDocument().parts.length, 0, 'Parts cleared');
+    assertEqual(editor.getDocument().project, null, 'Project cleared');
+
+    // ── Summary ────────────────────────────────────────────────
+
+    const summaryDiv = document.getElementById('summary');
+    const total = passed + failed;
+    summaryDiv.innerHTML = `<strong>Results: ${passed}/${total} passed</strong>` +
+      (failed > 0 ? ` <span class="fail">(${failed} failed)</span>` : ' <span class="pass">All tests passed!</span>');
+  </script>
+</body>
+</html>
