@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.WhiteoutSurvival" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@color/ice_blue</item>
+        <item name="android:navigationBarColor">@color/frost_gray</item>
+    </style>
+</resources>
