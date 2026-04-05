@@ -23,3 +23,8 @@
   border-left: 1px solid var(--border);
   overflow-y: auto;
 }
+
+.full-page-area {
+  flex: 1;
+  overflow-y: auto;
+}

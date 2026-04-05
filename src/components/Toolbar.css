@@ -15,17 +15,24 @@
   gap: 8px;
 }
 
+.toolbar-left {
+  flex: 1;
+  min-width: 0;
+}
+
 .toolbar-brand {
   font-weight: 700;
   font-size: 1rem;
   color: var(--accent);
   letter-spacing: 1px;
+  flex-shrink: 0;
 }
 
 .toolbar-divider {
   width: 1px;
   height: 24px;
   background: var(--border);
+  flex-shrink: 0;
 }
 
 .toolbar-house-name {
@@ -34,6 +41,10 @@
   padding: 2px 8px;
   border-radius: 3px;
   transition: background 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 160px;
 }
 
 .toolbar-house-name:hover {
@@ -41,25 +52,39 @@
 }
 
 .toolbar-name-edit input {
-  width: 180px;
+  width: 160px;
 }
 
 .toolbar-tabs {
   display: flex;
-  gap: 2px;
+  gap: 1px;
+  overflow-x: auto;
 }
 
 .toolbar-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   background: transparent;
   color: var(--text-secondary);
-  padding: 6px 14px;
+  padding: 5px 10px;
   border-radius: 3px;
   font-weight: 500;
+  white-space: nowrap;
+  font-size: 0.75rem;
 }
 
 .toolbar-tab.active {
   background: var(--bg-panel);
   color: var(--text-primary);
+}
+
+.toolbar-tab-icon {
+  font-size: 0.9rem;
+}
+
+.toolbar-tab-label {
+  font-size: 0.72rem;
 }
 
 .toolbar-group {
@@ -69,7 +94,7 @@
 }
 
 .toolbar-label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-secondary);
   margin-right: 2px;
 }
@@ -79,7 +104,7 @@
   color: var(--text-secondary);
   padding: 4px 10px;
   border-radius: 3px;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
 }
 
@@ -92,7 +117,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--text-secondary);
   cursor: pointer;
 }

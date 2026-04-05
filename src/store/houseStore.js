@@ -204,7 +204,7 @@ export const useHouseStore = create((set, get) => ({
   showWireframe: false,
   showDimensions: true,
   viewMode: '3d', // 3d, front, side, top
-  activeTab: 'house', // house, panels, ijoists, editor
+  activeTab: 'dashboard', // dashboard, house, panels, ijoists, editor, warehouse, production, waste
 
   // Actions - Sites
   selectSite: (siteId) => set({ selectedSiteId: siteId }),
