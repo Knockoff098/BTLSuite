@@ -1,0 +1,88 @@
+.panel-editor {
+  padding: 12px;
+}
+
+.panel-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.panel-editor-header h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.panel-editor-close {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.pe-section {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pe-section-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.pe-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.pe-row label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  width: 60px;
+  flex-shrink: 0;
+}
+
+.pe-row input,
+.pe-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.pe-vec3 {
+  display: flex;
+  gap: 6px;
+}
+
+.pe-vec3-field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pe-axis {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  width: 14px;
+  text-align: center;
+}
+
+.pe-vec3-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+.pe-joist-summary {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
