@@ -96,7 +96,7 @@ if (canRunDom) {
   const vm = require('vm');
 
   const srcDir = path.join(__dirname, '..', 'src');
-  const files = ['btl-parser.js', 'btl-converter.js', 'btl-editor.js'];
+  const files = ['btl-parser.js', 'btl-converter.js', 'btl-editor.js', 'btl-validator.js', 'btl-diff.js', 'btl-search.js'];
 
   const context = vm.createContext({
     DOMParser: global.DOMParser,
@@ -122,7 +122,13 @@ if (canRunDom) {
 
   for (const file of files) {
     const code = fs.readFileSync(path.join(srcDir, file), 'utf8');
+    // Reset module.exports before each file so classes are captured
+    context.module = { exports: {} };
     vm.runInContext(code, context);
+    // Copy exported classes to context globals
+    for (const [key, val] of Object.entries(context.module.exports)) {
+      context[key] = val;
+    }
   }
 
   // ── Parser Tests ─────────────────────────────────────────────
@@ -208,6 +214,166 @@ if (canRunDom) {
   editor.clearAll();
   assertEqual(editor.getDocument().parts.length, 0, 'After clear: 0 parts');
 
+  // ── Validator Tests ─────────────────────────────────────────
+
+  suite('BTLValidator - Valid Document');
+
+  const validator = new context.BTLValidator();
+  const validDoc = parser.parse(sampleXml);
+  const validReport = validator.validate(validDoc);
+
+  assert(validReport.isValid, 'Sample document passes validation');
+  assertEqual(validReport.errors.length, 0, 'No errors in valid document');
+  assert(validReport.warnings.length >= 0, 'Warnings count is a number');
+
+  suite('BTLValidator - Invalid Document');
+
+  const invalidDoc = parser.parse(sampleXml);
+  invalidDoc.parts.push({
+    id: '',
+    name: '',
+    type: '',
+    material: '',
+    length: -5,
+    width: 0,
+    height: 0,
+    processings: [{
+      type: '',
+      id: '',
+      name: '',
+      referenceSide: '99',
+      attributes: {},
+      parameters: { Angle: 500, Depth: -10, Diameter: -1 },
+      children: { tagName: 'Processing', attributes: {}, text: '', children: [] },
+    }],
+    attributes: {},
+    children: { tagName: 'Part', attributes: {}, text: '', children: [] },
+  });
+
+  const invalidReport = validator.validate(invalidDoc);
+  assert(!invalidReport.isValid, 'Document with bad part fails validation');
+  assert(invalidReport.errors.length > 0, 'Has errors for invalid values');
+
+  suite('BTLValidator - Duplicate IDs');
+
+  const dupDoc = parser.parse(sampleXml);
+  dupDoc.parts.push(JSON.parse(JSON.stringify(dupDoc.parts[0])));
+  const dupReport = validator.validate(dupDoc);
+  assert(dupReport.errors.some(e => e.message.includes('Duplicate')), 'Detects duplicate part IDs');
+
+  suite('BTLValidator - Summary');
+
+  assert(typeof validReport.getSummary() === 'string', 'getSummary returns string');
+  assert(typeof invalidReport.issueCount === 'number', 'issueCount is a number');
+  assert(invalidReport.issueCount > 0, 'Invalid doc has issues');
+
+  // ── Diff Tests ────────────────────────────────────────────────
+
+  suite('BTLDiff - Identical Documents');
+
+  const diffDocA = parser.parse(sampleXml);
+  const diffDocB = parser.parse(sampleXml);
+  const identicalReport = context.BTLDiff.compare(diffDocA, diffDocB);
+
+  assert(!identicalReport.hasDifferences, 'Identical docs have no differences');
+  assertEqual(identicalReport.totalDifferences, 0, 'Zero total differences');
+
+  suite('BTLDiff - Modified Document');
+
+  const modifiedXml = sampleXml.replace('Main Beam', 'Modified Beam').replace('6000', '7000');
+  const diffDocC = parser.parse(modifiedXml);
+  const modReport = context.BTLDiff.compare(diffDocA, diffDocC);
+
+  assert(modReport.hasDifferences, 'Modified doc has differences');
+  assert(modReport.changes.length > 0, 'Has changes');
+  assert(modReport.toList().length > 0, 'toList returns items');
+
+  suite('BTLDiff - Added/Removed Parts');
+
+  const addedPartDoc = parser.parse(sampleXml);
+  addedPartDoc.parts.push({
+    id: 'new-part',
+    name: 'New Part',
+    type: 'Post',
+    material: 'C24',
+    length: 2000,
+    width: 100,
+    height: 100,
+    processings: [],
+    attributes: {},
+    children: { tagName: 'Part', attributes: {}, text: '', children: [] },
+  });
+
+  const addReport = context.BTLDiff.compare(diffDocA, addedPartDoc);
+  assert(addReport.additions.length > 0, 'Detects added part');
+
+  const removeReport = context.BTLDiff.compare(addedPartDoc, diffDocA);
+  assert(removeReport.removals.length > 0, 'Detects removed part');
+
+  suite('BTLDiff - Summary');
+
+  assert(typeof identicalReport.getSummary() === 'string', 'Identical diff summary is string');
+  assert(identicalReport.getSummary().includes('identical'), 'Identical summary says identical');
+
+  // ── Search Tests ──────────────────────────────────────────────
+
+  suite('BTLSearch - Part Search');
+
+  const searchDoc = parser.parse(sampleXml);
+  const search = new context.BTLSearch(searchDoc);
+
+  const beamResults = search.searchParts('beam');
+  assert(beamResults.length > 0, 'Finds beam by name search');
+  assert(beamResults[0].matches.includes('name') || beamResults[0].matches.includes('id'), 'Match includes field name');
+
+  const noResults = search.searchParts('nonexistent12345');
+  assertEqual(noResults.length, 0, 'No results for nonexistent query');
+
+  suite('BTLSearch - Processing Search');
+
+  const cutResults = search.searchProcessings('cut');
+  assert(cutResults.length > 0, 'Finds Cut processings');
+
+  const drillResults = search.searchProcessings('drilling');
+  assert(drillResults.length > 0, 'Finds Drilling processings');
+
+  suite('BTLSearch - Filter Parts');
+
+  const beamFilter = search.filterParts({ type: 'Beam' });
+  assert(beamFilter.length > 0, 'Filter by type finds beams');
+  assert(beamFilter.every(r => r.part.type === 'Beam'), 'All filtered results are Beams');
+
+  const materialFilter = search.filterParts({ material: 'GL24h' });
+  assert(materialFilter.length > 0, 'Filter by material works');
+
+  const lengthFilter = search.filterParts({ minLength: 5000 });
+  assert(lengthFilter.length > 0, 'Filter by min length works');
+  assert(lengthFilter.every(r => r.part.length >= 5000), 'All results meet min length');
+
+  const noFilter = search.filterParts({});
+  assertEqual(noFilter.length, searchDoc.parts.length, 'Empty filter returns all parts');
+
+  suite('BTLSearch - Unique Values');
+
+  const types = search.getUniqueValues('type');
+  assert(Array.isArray(types), 'getUniqueValues returns array');
+  assert(types.length > 0, 'Has unique types');
+
+  const procTypes = search.getProcessingTypes();
+  assert(Array.isArray(procTypes), 'getProcessingTypes returns array');
+  assert(procTypes.includes('Cut'), 'Processing types include Cut');
+
+  suite('BTLSearch - Statistics');
+
+  const stats = search.getStatistics();
+  assertEqual(stats.totalParts, 2, 'Stats: 2 total parts');
+  assert(stats.totalProcessings > 0, 'Stats: has processings');
+  assert(stats.totalVolumeCubicMeters > 0, 'Stats: volume is positive');
+  assert(typeof stats.partsByType === 'object', 'Stats: partsByType is object');
+  assert(typeof stats.procsByType === 'object', 'Stats: procsByType is object');
+  assert(stats.dimensions.length.min > 0, 'Stats: length min is positive');
+  assert(stats.dimensions.length.max >= stats.dimensions.length.min, 'Stats: length max >= min');
+
 } else {
   // Structural / regex tests when no DOM is available
   suite('Structural Tests - XML Content Validation');
@@ -229,6 +395,9 @@ if (canRunDom) {
     'src/btl-parser.js',
     'src/btl-converter.js',
     'src/btl-editor.js',
+    'src/btl-validator.js',
+    'src/btl-diff.js',
+    'src/btl-search.js',
     'src/app.js',
     'index.html',
     'styles.css',
@@ -257,6 +426,22 @@ if (canRunDom) {
   assert(editorSrc.includes('addPart'), 'Editor has addPart');
   assert(editorSrc.includes('undo'), 'Editor has undo');
   assert(editorSrc.includes('redo'), 'Editor has redo');
+
+  const validatorSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'btl-validator.js'), 'utf8');
+  assert(validatorSrc.includes('class BTLValidator'), 'Validator has BTLValidator class');
+  assert(validatorSrc.includes('validate'), 'Validator has validate method');
+  assert(validatorSrc.includes('class BTLValidationReport'), 'Validator has BTLValidationReport class');
+
+  const diffSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'btl-diff.js'), 'utf8');
+  assert(diffSrc.includes('class BTLDiff'), 'Diff has BTLDiff class');
+  assert(diffSrc.includes('compare'), 'Diff has compare method');
+  assert(diffSrc.includes('class BTLDiffReport'), 'Diff has BTLDiffReport class');
+
+  const searchSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'btl-search.js'), 'utf8');
+  assert(searchSrc.includes('class BTLSearch'), 'Search has BTLSearch class');
+  assert(searchSrc.includes('searchParts'), 'Search has searchParts');
+  assert(searchSrc.includes('filterParts'), 'Search has filterParts');
+  assert(searchSrc.includes('getStatistics'), 'Search has getStatistics');
 }
 
 // ── Summary ────────────────────────────────────────────────────
