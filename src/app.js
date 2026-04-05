@@ -7,7 +7,9 @@ class BTLApp {
   constructor() {
     this.parser = new BTLParser();
     this.converter = new BTLConverter();
+    this.validator = new BTLValidator();
     this.editor = null;
+    this.search = null;
     this.currentDocument = null;
     this.currentTab = 'viewer';
 
@@ -53,6 +55,20 @@ class BTLApp {
 
     // Raw XML editor save
     document.getElementById('btn-apply-raw').addEventListener('click', () => this._applyRawXml());
+
+    // Search & filter
+    document.getElementById('btn-search').addEventListener('click', () => this._performSearch());
+    document.getElementById('search-query').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this._performSearch();
+    });
+    document.getElementById('btn-filter').addEventListener('click', () => this._performFilter());
+
+    // Validator
+    document.getElementById('btn-validate').addEventListener('click', () => this._validateDocument());
+
+    // Diff
+    document.getElementById('btn-diff-compare').addEventListener('click', () => this._performDiff());
+    document.getElementById('btn-diff-use-current').addEventListener('click', () => this._diffUseCurrent());
   }
 
   _loadSampleOnStart() {
@@ -109,11 +125,14 @@ class BTLApp {
       this.currentDocument = this.parser.parse(xmlString);
       this.currentDocument.metadata.fileName = fileName || '';
       this.editor = new BTLEditor(this.currentDocument);
+      this.search = new BTLSearch(this.currentDocument);
 
       this._showSuccess(`Loaded: ${fileName}`);
       this._updateViewer();
       this._updateEditorUI();
       this._updateRawEditor(xmlString);
+      this._updateSearchFilters();
+      this._updateStatistics();
       this._switchTab('viewer');
     } catch (err) {
       this._showError(`Parse error: ${err.message}`);
@@ -582,6 +601,290 @@ class BTLApp {
     el.textContent = msg;
     container.appendChild(el);
     setTimeout(() => el.remove(), 4000);
+  }
+
+  // ── Search & Filter ──────────────────────────────────────────────
+
+  _updateSearchFilters() {
+    if (!this.search) return;
+
+    const typeSelect = document.getElementById('filter-type');
+    const materialSelect = document.getElementById('filter-material');
+
+    const types = this.search.getUniqueValues('type');
+    const materials = this.search.getUniqueValues('material');
+
+    typeSelect.innerHTML = '<option value="">All Types</option>' +
+      types.map(t => `<option value="${this._escHtml(t)}">${this._escHtml(t)}</option>`).join('');
+
+    materialSelect.innerHTML = '<option value="">All Materials</option>' +
+      materials.map(m => `<option value="${this._escHtml(m)}">${this._escHtml(m)}</option>`).join('');
+  }
+
+  _performSearch() {
+    if (!this.search) {
+      this._showError('Load a document first.');
+      return;
+    }
+    const query = document.getElementById('search-query').value.trim();
+    if (!query) {
+      document.getElementById('search-results').innerHTML =
+        '<div class="empty-state"><p>Enter a search term above.</p></div>';
+      return;
+    }
+
+    const partResults = this.search.searchParts(query);
+    const procResults = this.search.searchProcessings(query);
+
+    let html = '';
+
+    if (partResults.length === 0 && procResults.length === 0) {
+      html = '<div class="empty-state"><p>No results found for "' + this._escHtml(query) + '".</p></div>';
+    } else {
+      if (partResults.length > 0) {
+        html += `<h3 style="color:var(--color-primary);margin-bottom:0.5rem;">Parts (${partResults.length})</h3>`;
+        for (const r of partResults) {
+          html += '<div class="search-result-item">';
+          html += `<span class="search-result-name">${this._escHtml(r.part.name || r.part.id || 'Unnamed')}</span>`;
+          html += `<span class="search-result-detail">${this._escHtml(r.part.type)} | ${this._escHtml(r.part.material)} | ${r.part.length}mm</span>`;
+          html += r.matches.map(m => `<span class="search-match-field">${m}</span>`).join('');
+          html += '</div>';
+        }
+      }
+
+      if (procResults.length > 0) {
+        html += `<h3 style="color:var(--color-accent);margin:1rem 0 0.5rem;">Processings (${procResults.length})</h3>`;
+        for (const r of procResults) {
+          const partName = this.currentDocument.parts[r.partIndex]?.name || `Part ${r.partIndex}`;
+          html += '<div class="search-result-item">';
+          html += `<span class="search-result-name">${this._escHtml(r.processing.type)}</span>`;
+          html += `<span class="search-result-detail">in ${this._escHtml(partName)}</span>`;
+          html += r.matches.map(m => `<span class="search-match-field">${m}</span>`).join('');
+          html += '</div>';
+        }
+      }
+    }
+
+    document.getElementById('search-results').innerHTML = html;
+  }
+
+  _performFilter() {
+    if (!this.search) {
+      this._showError('Load a document first.');
+      return;
+    }
+
+    const criteria = {};
+    const type = document.getElementById('filter-type').value;
+    const material = document.getElementById('filter-material').value;
+    const minLen = document.getElementById('filter-min-length').value;
+    const maxLen = document.getElementById('filter-max-length').value;
+
+    if (type) criteria.type = type;
+    if (material) criteria.material = material;
+    if (minLen) criteria.minLength = Number(minLen);
+    if (maxLen) criteria.maxLength = Number(maxLen);
+
+    const results = this.search.filterParts(criteria);
+
+    let html = '';
+    if (results.length === 0) {
+      html = '<div class="empty-state"><p>No parts match the selected filters.</p></div>';
+    } else {
+      html += `<h3 style="color:var(--color-primary);margin-bottom:0.5rem;">Filtered Parts (${results.length})</h3>`;
+      for (const r of results) {
+        html += '<div class="search-result-item">';
+        html += `<span class="search-result-name">${this._escHtml(r.part.name || r.part.id || 'Unnamed')}</span>`;
+        html += `<span class="search-result-detail">${this._escHtml(r.part.type)} | ${this._escHtml(r.part.material)} | ${r.part.length}x${r.part.width}x${r.part.height}mm</span>`;
+        html += `<span class="badge">${r.part.processings.length} ops</span>`;
+        html += '</div>';
+      }
+    }
+
+    document.getElementById('search-results').innerHTML = html;
+    this._showSuccess(`Filter returned ${results.length} part(s).`);
+  }
+
+  _updateStatistics() {
+    if (!this.search) return;
+
+    const stats = this.search.getStatistics();
+    const container = document.getElementById('stats-content');
+    const barColors = ['stat-bar-primary', 'stat-bar-success', 'stat-bar-warning', 'stat-bar-info', 'stat-bar-accent'];
+
+    let html = '';
+
+    html += `<div class="stat-card"><h4>Total Parts</h4><div class="stat-value">${stats.totalParts}</div></div>`;
+    html += `<div class="stat-card"><h4>Total Processings</h4><div class="stat-value">${stats.totalProcessings}</div></div>`;
+    html += `<div class="stat-card"><h4>Total Volume</h4><div class="stat-value">${stats.totalVolumeCubicMeters}</div><div class="stat-breakdown-label">cubic meters</div></div>`;
+
+    const typeEntries = Object.entries(stats.partsByType);
+    if (typeEntries.length > 0) {
+      html += '<div class="stat-card"><h4>Parts by Type</h4><div class="stat-breakdown">';
+      const maxType = Math.max(...typeEntries.map(([, v]) => v));
+      typeEntries.forEach(([k, v], i) => {
+        const pct = maxType > 0 ? (v / maxType) * 100 : 0;
+        html += `<div class="stat-breakdown-item"><span class="stat-breakdown-label">${this._escHtml(k)}</span><span class="stat-breakdown-value">${v}</span></div>`;
+        html += `<div class="stat-bar-container"><div class="stat-bar ${barColors[i % barColors.length]}" style="width:${pct}%"></div></div>`;
+      });
+      html += '</div></div>';
+    }
+
+    const matEntries = Object.entries(stats.partsByMaterial);
+    if (matEntries.length > 0) {
+      html += '<div class="stat-card"><h4>Parts by Material</h4><div class="stat-breakdown">';
+      const maxMat = Math.max(...matEntries.map(([, v]) => v));
+      matEntries.forEach(([k, v], i) => {
+        const pct = maxMat > 0 ? (v / maxMat) * 100 : 0;
+        html += `<div class="stat-breakdown-item"><span class="stat-breakdown-label">${this._escHtml(k)}</span><span class="stat-breakdown-value">${v}</span></div>`;
+        html += `<div class="stat-bar-container"><div class="stat-bar ${barColors[(i + 2) % barColors.length]}" style="width:${pct}%"></div></div>`;
+      });
+      html += '</div></div>';
+    }
+
+    const procEntries = Object.entries(stats.procsByType);
+    if (procEntries.length > 0) {
+      html += '<div class="stat-card"><h4>Processings by Type</h4><div class="stat-breakdown">';
+      const maxProc = Math.max(...procEntries.map(([, v]) => v));
+      procEntries.forEach(([k, v], i) => {
+        const pct = maxProc > 0 ? (v / maxProc) * 100 : 0;
+        html += `<div class="stat-breakdown-item"><span class="stat-breakdown-label">${this._escHtml(k)}</span><span class="stat-breakdown-value">${v}</span></div>`;
+        html += `<div class="stat-bar-container"><div class="stat-bar ${barColors[(i + 1) % barColors.length]}" style="width:${pct}%"></div></div>`;
+      });
+      html += '</div></div>';
+    }
+
+    const dims = stats.dimensions;
+    if (dims.length.count > 0) {
+      html += '<div class="stat-card"><h4>Dimension Ranges (mm)</h4><div class="stat-breakdown">';
+      html += `<div class="stat-breakdown-item"><span class="stat-breakdown-label">Length</span><span class="stat-breakdown-value">${dims.length.min} - ${dims.length.max} (avg ${dims.length.avg})</span></div>`;
+      if (dims.width.count > 0) {
+        html += `<div class="stat-breakdown-item"><span class="stat-breakdown-label">Width</span><span class="stat-breakdown-value">${dims.width.min} - ${dims.width.max} (avg ${dims.width.avg})</span></div>`;
+      }
+      if (dims.height.count > 0) {
+        html += `<div class="stat-breakdown-item"><span class="stat-breakdown-label">Height</span><span class="stat-breakdown-value">${dims.height.min} - ${dims.height.max} (avg ${dims.height.avg})</span></div>`;
+      }
+      html += '</div></div>';
+    }
+
+    container.innerHTML = html;
+  }
+
+  // ── Validator ──────────────────────────────────────────────────────
+
+  _validateDocument() {
+    if (!this.currentDocument) {
+      this._showError('Load a document first.');
+      return;
+    }
+
+    const report = this.validator.validate(this.currentDocument);
+    const container = document.getElementById('validator-results');
+
+    let html = '';
+
+    let iconClass, iconText;
+    if (report.isValid && report.warnings.length === 0) {
+      iconClass = 'valid';
+      iconText = '&#10003;';
+    } else if (report.isValid) {
+      iconClass = 'warnings-only';
+      iconText = '!';
+    } else {
+      iconClass = 'invalid';
+      iconText = '&#10007;';
+    }
+
+    html += '<div class="validation-summary">';
+    html += `<div class="validation-status-icon ${iconClass}">${iconText}</div>`;
+    html += '<div class="validation-summary-text">';
+    html += `<div class="validation-summary-title">${report.isValid ? 'Document Valid' : 'Validation Errors Found'}</div>`;
+    html += `<div class="validation-summary-detail">${this._escHtml(report.getSummary())}</div>`;
+    html += '</div></div>';
+
+    const issues = report.getAllIssues();
+    if (issues.length > 0) {
+      html += '<div class="validation-issues">';
+      for (const issue of issues) {
+        html += `<div class="validation-issue ${issue.severity}">`;
+        html += `<span class="validation-issue-severity">${issue.severity}</span>`;
+        html += '<div>';
+        html += `<div>${this._escHtml(issue.message)}</div>`;
+        html += `<div class="validation-issue-source">${this._escHtml(issue.source)}</div>`;
+        html += '</div></div>';
+      }
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+    this._showSuccess(`Validation complete: ${report.getSummary()}`);
+  }
+
+  // ── Diff ──────────────────────────────────────────────────────────
+
+  _diffUseCurrent() {
+    if (!this.currentDocument) {
+      this._showError('Load a document first.');
+      return;
+    }
+    try {
+      const xml = this.converter.jsonToBtl(this.currentDocument.toJSON());
+      document.getElementById('diff-doc-a').value = xml;
+      this._showSuccess('Current document loaded into Document A.');
+    } catch (err) {
+      this._showError(`Could not serialize current document: ${err.message}`);
+    }
+  }
+
+  _performDiff() {
+    const xmlA = document.getElementById('diff-doc-a').value.trim();
+    const xmlB = document.getElementById('diff-doc-b').value.trim();
+
+    if (!xmlA || !xmlB) {
+      this._showError('Both Document A and Document B must contain BTL/XML content.');
+      return;
+    }
+
+    let docA, docB;
+    try {
+      docA = this.parser.parse(xmlA);
+    } catch (err) {
+      this._showError(`Document A parse error: ${err.message}`);
+      return;
+    }
+    try {
+      docB = this.parser.parse(xmlB);
+    } catch (err) {
+      this._showError(`Document B parse error: ${err.message}`);
+      return;
+    }
+
+    const report = BTLDiff.compare(docA, docB);
+    const container = document.getElementById('diff-results');
+
+    let html = '';
+
+    html += `<div class="diff-summary ${report.hasDifferences ? '' : 'identical'}">`;
+    html += this._escHtml(report.getSummary());
+    html += '</div>';
+
+    if (report.hasDifferences) {
+      const items = report.toList();
+      for (const item of items) {
+        html += `<div class="diff-item ${item.type}">`;
+        html += `<span class="diff-type-badge">${item.type}</span>`;
+        html += '<div>';
+        html += `<div><strong>${this._escHtml(item.label)}</strong></div>`;
+        html += `<div class="diff-item-scope">${this._escHtml(item.scope)}</div>`;
+        if (item.detail) {
+          html += `<div class="diff-item-detail">${this._escHtml(item.detail)}</div>`;
+        }
+        html += '</div></div>';
+      }
+    }
+
+    container.innerHTML = html;
+    this._showSuccess('Diff complete.');
   }
 
   // ── Helpers ──────────────────────────────────────────────────────
